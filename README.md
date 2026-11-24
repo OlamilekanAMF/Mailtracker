@@ -21,9 +21,14 @@ or Brave; it is not a published browser-store extension.
    marked **Sent**; if it remains open for 20 seconds, it is marked
    **Send not confirmed**.
 3. When a recipient's mail client requests the image, the backend records the
-   event. Opens within the configured prefetch window are labeled as likely
-   automatic loads and excluded from the read count.
-4. The popup shows tracked messages, their status, and recorded opens. Search,
+   event. Loads from the sender's own compose window (before the send is
+   confirmed) and opens within the configured prefetch window are excluded
+   from the read count.
+4. While a webmail tab is open, `extension/bounce.js` looks for delivery-failure
+   notices ("Address not found", "Delivery Status Notification", ...). When one
+   names an address you sent to, that email is marked **Bounced** and its
+   opens are ignored.
+5. The popup shows tracked messages, their status, and recorded opens. Search,
    status filters, and the team-wide view help you find messages.
 
 ## Requirements
@@ -54,7 +59,7 @@ Put the generated value in `backend/.env`:
 API_KEY=replace-with-your-generated-secret
 PORT=3000
 DB_PATH=mailtrack.db
-PREFETCH_WINDOW_SEC=15
+PREFETCH_WINDOW_SEC=30
 ```
 
 Start the backend from the `backend` directory:
@@ -78,7 +83,8 @@ public HTTPS URL in the extension settings.
 | `API_KEY` | Yes | — | Shared secret used by the extension to access the API. |
 | `PORT` | No | `3000` | HTTP port used by the backend. |
 | `DB_PATH` | No | `mailtrack.db` | SQLite database path; relative paths resolve from the backend's working directory. |
-| `PREFETCH_WINDOW_SEC` | No | `15` | Opens this soon after sending are classified as likely prefetches and excluded from reads. |
+| `PREFETCH_WINDOW_SEC` | No | `30` | Opens this soon after sending are classified as likely prefetches and excluded from reads. |
+| `PENDING_GRACE_SEC` | No | `120` | If a send is never confirmed, opens start counting after this long. |
 
 Use the same `API_KEY` in each teammate's extension settings. Keep it private:
 anyone with this key can use the API, including its team-wide email listing.
@@ -114,6 +120,7 @@ extension/
   manifest.json   Manifest V3 configuration and supported webmail sites
   providers.js    Provider-specific webmail DOM selectors
   content.js      Send detection, pixel insertion, and status tracking
+  bounce.js       Detects delivery-failure notices and marks emails Bounced
   background.js   Authenticated requests to the backend
   popup.html      Popup dashboard interface and styles
   popup.js        Dashboard rendering, search, filters, and summary
@@ -141,8 +148,11 @@ Authenticated API requests use the `x-api-key` header.
   unread. The prefetch window only reduces some automatic-load false positives.
 - **Your own Sent-folder views may count as opens.** Mail providers can load
   images through their proxies, so the extension cannot reliably exclude them.
-- **Sent is not delivery confirmation.** It means the compose window closed;
-  bounces and inbox delivery are not detected.
+- **Sent is not delivery confirmation.** It means the compose window closed.
+  Bounces are detected only while a webmail tab is open and the failure notice
+  is visible on screen (Gmail is the most reliable; other providers are best
+  effort). Until then a bad address still shows as Sent. Inbox delivery of
+  messages that do not bounce cannot be confirmed.
 - **Tracking requires HTML and remote-image loading.** Plain-text messages
   cannot carry the pixel, and recipients who block remote images cannot
   generate an open event.

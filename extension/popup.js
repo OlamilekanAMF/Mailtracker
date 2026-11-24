@@ -102,9 +102,12 @@ function render(emails) {
     if (email.status === "sent") badges.append(badge("Sent", "sent"));
     else if (email.status === "unconfirmed") badges.append(badge("Send not confirmed", "warn"));
     else if (email.status === "failed") badges.append(badge("Failed", "failed"));
+    else if (email.status === "bounced") badges.append(badge("Bounced · not delivered", "failed"));
     else badges.append(badge("Pending", "pending"));
 
-    if (email.opens > 0) {
+    if (email.status === "bounced" || email.status === "failed") {
+      // Never delivered, so there is no read/unread state to show.
+    } else if (email.opens > 0) {
       badges.append(badge(`Read · ${email.opens} open${email.opens > 1 ? "s" : ""}`, "read"));
       if (email.firstOpenedAt) badges.append(badge(`First opened ${fmtOpenTime(email.firstOpenedAt)}`, "read"));
     } else if (email.status === "sent") {

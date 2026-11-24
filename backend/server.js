@@ -11,7 +11,9 @@ const PORT = process.env.PORT || 3000;
 const API_KEY = process.env.API_KEY;
 const DB_PATH = process.env.DB_PATH || "mailtrack.db";
 // Opens within this many seconds of sending are flagged as "likely prefetch / own view"
-const PREFETCH_WINDOW_SEC = Number(process.env.PREFETCH_WINDOW_SEC || 15);
+const PREFETCH_WINDOW_SEC = Number(process.env.PREFETCH_WINDOW_SEC || 30);
+// If the extension never confirms a send, opens start counting after this long anyway.
+const PENDING_GRACE_SEC = Number(process.env.PENDING_GRACE_SEC || 120);
 
 if (!API_KEY) {
   console.error("API_KEY is required. Set it in backend/.env or the process environment.");
@@ -64,11 +66,21 @@ app.get("/p/:id.gif", (req, res) => {
     const email = db.prepare("SELECT * FROM emails WHERE id = ?").get(id);
     if (email) {
       const now = Date.now();
-      const prefetch =
-        email.sent_at && now - email.sent_at < PREFETCH_WINDOW_SEC * 1000 ? 1 : 0;
+      // likely_prefetch: 0 = real open, 1 = auto-load shortly after sending,
+      // 2 = not a read at all (sender's own compose window, or mail that never arrived).
+      let flag;
+      if (email.status === "bounced" || email.status === "failed") {
+        flag = 2;
+      } else if (email.status === "pending" && now - email.created_at < PENDING_GRACE_SEC * 1000) {
+        // The compose window loads the pixel itself before the send is confirmed.
+        flag = 2;
+      } else {
+        const base = email.sent_at || email.created_at;
+        flag = now - base < PREFETCH_WINDOW_SEC * 1000 ? 1 : 0;
+      }
       db.prepare(
         "INSERT INTO opens (email_id, opened_at, user_agent, ip, likely_prefetch) VALUES (?,?,?,?,?)"
-      ).run(id, now, req.get("user-agent") || "", req.ip || "", prefetch);
+      ).run(id, now, req.get("user-agent") || "", req.ip || "", flag);
     }
   } catch (e) {
     console.error("pixel error", e);
@@ -103,10 +115,10 @@ app.post("/api/emails", requireKey, (req, res) => {
   res.json({ id });
 });
 
-// Extension: update status (sent | unconfirmed | failed)
+// Extension: update status (sent | unconfirmed | failed | bounced)
 app.post("/api/emails/:id/status", requireKey, (req, res) => {
   const status = req.body && req.body.status;
-  if (!["sent", "unconfirmed", "failed"].includes(status))
+  if (!["sent", "unconfirmed", "failed", "bounced"].includes(status))
     return res.status(400).json({ error: "bad status" });
   const sentAt = status === "sent" ? Date.now() : null;
   const r = db
@@ -132,6 +144,12 @@ app.get("/api/emails", requireKey, (req, res) => {
   const out = rows.map((r) => {
     const o = openStmt.get(r.id);
     const p = prefetchStmt.get(r.id);
+    // Mail that bounced or failed was never delivered, so it cannot have been read.
+    if (r.status === "bounced" || r.status === "failed") {
+      o.n = 0;
+      o.first = null;
+      o.last = null;
+    }
     return {
       id: r.id,
       owner: r.owner,

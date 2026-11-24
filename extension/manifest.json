@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mailtrack (internal)",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Tracks sent and read status for Gmail, Outlook, Zoho Mail and Yahoo Mail.",
   "permissions": ["storage"],
   "host_permissions": ["<all_urls>"],
@@ -21,7 +21,7 @@
         "https://mail.zoho.com.au/*",
         "https://mail.yahoo.com/*"
       ],
-      "js": ["providers.js", "content.js"],
+      "js": ["providers.js", "content.js", "bounce.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

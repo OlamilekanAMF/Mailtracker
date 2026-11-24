@@ -22,6 +22,21 @@
       chrome.storage.local.get(["serverUrl", "apiKey", "owner", "enabled"], (s) => resolve(s || {}))
     );
 
+  // Keep a small local list of recent sends so bounce.js can match delivery-failure
+  // notices (which only name the failed address) back to the right tracked email.
+  const rememberSend = (entry) => {
+    try {
+      chrome.storage.local.get(["recent"], (s) => {
+        const cutoff = Date.now() - 7 * 24 * 3600 * 1000;
+        const recent = ((s && s.recent) || []).filter((r) => r.createdAt > cutoff);
+        recent.push(entry);
+        chrome.storage.local.set({ recent: recent.slice(-200) });
+      });
+    } catch (_) {
+      /* best effort */
+    }
+  };
+
   const findRoot = (target) => {
     try {
       return provider.composeRoots().find((r) => r && r.contains(target)) || null;
@@ -109,14 +124,16 @@
     handled.set(root, result.id);
 
     const owner = settings.owner || provider.owner() || "unknown";
+    const recipients = provider.recipients(root);
     chrome.runtime.sendMessage({
       type: "register",
       id: result.id,
       owner,
       provider: provider.name,
       subject: provider.subject(root),
-      recipients: provider.recipients(root),
+      recipients,
     });
+    rememberSend({ id: result.id, recipients, createdAt: Date.now(), status: "pending" });
     pending.delete(root);
     watchForSent(root, result.id);
   }
