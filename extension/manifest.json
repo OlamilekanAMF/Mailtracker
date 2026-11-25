@@ -1,12 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Mailtrack (internal)",
-  "version": "1.1.0",
-  "description": "Tracks sent and read status for Gmail, Outlook, Zoho Mail and Yahoo Mail.",
-  "permissions": ["storage"],
+  "version": "1.2.0",
+  "description": "Tracks sent, read and bounced status for Gmail, Outlook, Zoho Mail and Yahoo Mail, with open notifications and no-reply reminders.",
+  "permissions": ["storage", "alarms", "notifications"],
   "host_permissions": ["<all_urls>"],
+  "icons": { "16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png" },
   "background": { "service_worker": "background.js" },
-  "action": { "default_popup": "popup.html", "default_title": "Mailtrack" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Mailtrack",
+    "default_icon": { "16": "icons/icon16.png", "48": "icons/icon48.png" }
+  },
   "options_page": "options.html",
   "content_scripts": [
     {
@@ -21,7 +26,7 @@
         "https://mail.zoho.com.au/*",
         "https://mail.yahoo.com/*"
       ],
-      "js": ["providers.js", "content.js", "bounce.js"],
+      "js": ["providers.js", "content.js", "bounce.js", "data.js", "ticks.js", "reminders.js"],
       "run_at": "document_idle",
       "all_frames": false
     }

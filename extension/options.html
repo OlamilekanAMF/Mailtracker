@@ -33,6 +33,20 @@
 
   <label><input type="checkbox" id="enabled" checked /> Tracking enabled</label>
 
+  <label><input type="checkbox" id="notifyOpens" checked /> Notify me when someone opens my email
+    <small>Chrome notification. Checked every 30 seconds, and every 10 seconds while a webmail tab is open.</small>
+  </label>
+
+  <label>Automatic no-reply reminder (Gmail)
+    <small>Remind me if there is no reply after this long. You can also set one per email with the bell button in Gmail.</small>
+    <select id="autoRemindHours">
+      <option value="0">Off</option>
+      <option value="24">24 hours</option>
+      <option value="48">48 hours</option>
+      <option value="72">72 hours</option>
+    </select>
+  </label>
+
   <button id="save">Save</button>
   <button id="test">Test connection</button>
   <div id="status"></div>

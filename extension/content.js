@@ -19,7 +19,7 @@
 
   const getSettings = () =>
     new Promise((resolve) =>
-      chrome.storage.local.get(["serverUrl", "apiKey", "owner", "enabled"], (s) => resolve(s || {}))
+      chrome.storage.local.get(["serverUrl", "apiKey", "owner", "enabled", "autoRemindHours"], (s) => resolve(s || {}))
     );
 
   // Keep a small local list of recent sends so bounce.js can match delivery-failure
@@ -134,9 +134,38 @@
       recipients,
     });
     rememberSend({ id: result.id, recipients, createdAt: Date.now(), status: "pending" });
+
+    // Optional automatic "no reply" reminder (Settings), Gmail only.
+    if (provider.name === "gmail" && Number(settings.autoRemindHours) > 0) {
+      const createdAt = Date.now();
+      const subject = provider.subject(root);
+      chrome.storage.local.get(["reminders"], (s) => {
+        const reminders = (s && s.reminders) || {};
+        reminders[result.id] = {
+          id: result.id,
+          subject,
+          recipients,
+          createdAt,
+          at: createdAt + Number(settings.autoRemindHours) * 3600 * 1000,
+          status: "active",
+        };
+        chrome.storage.local.set({ reminders });
+      });
+    }
     pending.delete(root);
     watchForSent(root, result.id);
   }
+
+  // While a webmail tab is visible, nudge the background worker every 10 seconds so "your
+  // email was opened" notifications arrive quickly (it checks every 30s on its own).
+  setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+    try {
+      chrome.runtime.sendMessage({ type: "poll" }, () => void chrome.runtime.lastError);
+    } catch (_) {
+      /* extension was reloaded: refresh this tab */
+    }
+  }, 10000);
 
   // Capture phase so we run before the page's own handler sends the message.
   document.addEventListener(

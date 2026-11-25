@@ -1,6 +1,8 @@
 const $ = (id) => document.getElementById(id);
 
-chrome.storage.local.get(["serverUrl", "apiKey", "owner", "enabled"], (s) => {
+chrome.storage.local.get(["serverUrl", "apiKey", "owner", "enabled", "notifyOpens", "autoRemindHours"], (s) => {
+  $("notifyOpens").checked = s.notifyOpens !== false;
+  $("autoRemindHours").value = String(s.autoRemindHours || 0);
   $("serverUrl").value = s.serverUrl || "";
   $("apiKey").value = s.apiKey || "";
   $("owner").value = s.owner || "";
@@ -14,6 +16,8 @@ $("save").onclick = () => {
       apiKey: $("apiKey").value.trim(),
       owner: $("owner").value.trim(),
       enabled: $("enabled").checked,
+      notifyOpens: $("notifyOpens").checked,
+      autoRemindHours: Number($("autoRemindHours").value) || 0,
     },
     () => {
       $("err").textContent = "";

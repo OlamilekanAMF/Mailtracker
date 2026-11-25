@@ -5,6 +5,7 @@ const search = document.getElementById("search");
 const refresh = document.getElementById("refresh");
 let allEmails = [];
 let activeFilter = "all";
+let reminders = {};
 
 const fmtRelative = (t) => {
   if (!t) return "";
@@ -114,6 +115,11 @@ function render(emails) {
       badges.append(badge(email.prefetchHits ? "Unread (only auto-loads)" : "Unread", "unread"));
     }
 
+    const rem = reminders[email.id];
+    if (rem && rem.status === "active") badges.append(badge(`Reminder · ${fmtOpenTime(rem.at)}`, "pending"));
+    else if (rem && rem.status === "replied") badges.append(badge("Replied", "sent"));
+    else if (rem && rem.status === "fired") badges.append(badge("No reply", "warn"));
+
     content.append(top, meta, badges);
     row.append(avatar, content);
     list.append(row);
@@ -132,7 +138,10 @@ function load() {
       list.textContent = "";
       return;
     }
-    render(res.data.emails);
+    chrome.storage.local.get(["reminders"], (s) => {
+      reminders = (s && s.reminders) || {};
+      render(res.data.emails);
+    });
   });
 }
 

@@ -14,6 +14,13 @@ const DB_PATH = process.env.DB_PATH || "mailtrack.db";
 const PREFETCH_WINDOW_SEC = Number(process.env.PREFETCH_WINDOW_SEC || 30);
 // If the extension never confirms a send, opens start counting after this long anyway.
 const PENDING_GRACE_SEC = Number(process.env.PENDING_GRACE_SEC || 120);
+// While the sender views their own email in Gmail, Gmail loads the tracking image for them.
+// The extension reports that; pixel loads this many seconds after (and LOOKBACK before) the
+// report are the sender's own view, not a read.
+const SELF_VIEW_GRACE_SEC = Number(process.env.SELF_VIEW_GRACE_SEC || 20);
+const SELF_VIEW_LOOKBACK_SEC = Number(process.env.SELF_VIEW_LOOKBACK_SEC || 15);
+// "Your email was opened" notifications wait this long, so a self-view report can cancel them.
+const NOTIFY_DELAY_SEC = Number(process.env.NOTIFY_DELAY_SEC || 5);
 
 if (!API_KEY) {
   console.error("API_KEY is required. Set it in backend/.env or the process environment.");
@@ -42,6 +49,9 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_opens_email ON opens(email_id);
 `);
+// Add columns that older databases don't have yet.
+const emailCols = db.prepare("PRAGMA table_info(emails)").all().map((c) => c.name);
+if (!emailCols.includes("self_until")) db.exec("ALTER TABLE emails ADD COLUMN self_until INTEGER");
 
 const app = express();
 app.set("trust proxy", true);
@@ -69,7 +79,9 @@ app.get("/p/:id.gif", (req, res) => {
       // likely_prefetch: 0 = real open, 1 = auto-load shortly after sending,
       // 2 = not a read at all (sender's own compose window, or mail that never arrived).
       let flag;
-      if (email.status === "bounced" || email.status === "failed") {
+      if (email.self_until && now < email.self_until) {
+        flag = 2; // the sender is looking at their own email right now
+      } else if (email.status === "bounced" || email.status === "failed") {
         flag = 2;
       } else if (email.status === "pending" && now - email.created_at < PENDING_GRACE_SEC * 1000) {
         // The compose window loads the pixel itself before the send is confirmed.
@@ -166,6 +178,70 @@ app.get("/api/emails", requireKey, (req, res) => {
     };
   });
   res.json({ emails: out });
+});
+
+// Extension: the sender is viewing their own email. Ignore the pixel loads this causes.
+app.post("/api/emails/:id/self-view", requireKey, (req, res) => {
+  const now = Date.now();
+  const r = db
+    .prepare("UPDATE emails SET self_until = ? WHERE id = ?")
+    .run(now + SELF_VIEW_GRACE_SEC * 1000, req.params.id);
+  // Gmail may already have loaded the image a moment before this report arrived.
+  db.prepare(
+    "UPDATE opens SET likely_prefetch = 2 WHERE email_id = ? AND likely_prefetch = 0 AND opened_at > ?"
+  ).run(req.params.id, now - SELF_VIEW_LOOKBACK_SEC * 1000);
+  res.json({ ok: r.changes > 0 });
+});
+
+// Extension: new real opens after a cursor, for "your email was opened" notifications.
+// Without ?after it only returns the current cursor, so old opens never notify.
+app.get("/api/opens", requireKey, (req, res) => {
+  const owner = req.query.owner;
+  const after = req.query.after === undefined ? NaN : Number(req.query.after);
+  if (Number.isNaN(after)) {
+    const m = db.prepare("SELECT COALESCE(MAX(id), 0) AS m FROM opens").get();
+    return res.json({ opens: [], latestId: m.m });
+  }
+
+  const cutoff = Date.now() - NOTIFY_DELAY_SEC * 1000;
+  const LIMIT = 50;
+  const params = [after, cutoff];
+  let sql =
+    "SELECT o.id, o.email_id, o.opened_at, e.subject, e.recipients, e.provider " +
+    "FROM opens o JOIN emails e ON e.id = o.email_id " +
+    "WHERE o.id > ? AND o.opened_at <= ? AND o.likely_prefetch = 0 AND e.status NOT IN ('bounced','failed')";
+  if (owner) {
+    sql += " AND e.owner = ?";
+    params.push(owner);
+  }
+  sql += ` ORDER BY o.id ASC LIMIT ${LIMIT}`;
+  const rows = db.prepare(sql).all(...params);
+
+  // Ids grow with time, so everything older than the cutoff is a prefix: the cursor can
+  // safely move to the newest such id. (If the database was reset this goes backwards,
+  // which tells the extension to start over.)
+  let latestId;
+  if (rows.length === LIMIT) {
+    latestId = rows[rows.length - 1].id;
+  } else {
+    latestId = db.prepare("SELECT COALESCE(MAX(id), 0) AS m FROM opens WHERE opened_at <= ?").get(cutoff).m;
+  }
+
+  const firstStmt = db.prepare(
+    "SELECT COUNT(*) AS n FROM opens WHERE email_id = ? AND likely_prefetch = 0 AND id < ?"
+  );
+  res.json({
+    opens: rows.map((r) => ({
+      id: r.id,
+      emailId: r.email_id,
+      openedAt: r.opened_at,
+      subject: r.subject,
+      recipients: JSON.parse(r.recipients || "[]"),
+      provider: r.provider,
+      first: firstStmt.get(r.email_id, r.id).n === 0,
+    })),
+    latestId,
+  });
 });
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
