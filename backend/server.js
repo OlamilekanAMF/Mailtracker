@@ -77,10 +77,11 @@ app.get("/p/:id.gif", (req, res) => {
     if (email) {
       const now = Date.now();
       // likely_prefetch: 0 = real open, 1 = auto-load shortly after sending,
-      // 2 = not a read at all (sender's own compose window, or mail that never arrived).
+      // 2 = not a read at all (sender's own compose window, or mail that never arrived),
+      // 3 = the sender viewing their own email (reported by the extension).
       let flag;
       if (email.self_until && now < email.self_until) {
-        flag = 2; // the sender is looking at their own email right now
+        flag = 3; // the sender is looking at their own email right now
       } else if (email.status === "bounced" || email.status === "failed") {
         flag = 2;
       } else if (email.status === "pending" && now - email.created_at < PENDING_GRACE_SEC * 1000) {
@@ -153,9 +154,13 @@ app.get("/api/emails", requireKey, (req, res) => {
   const prefetchStmt = db.prepare(
     "SELECT COUNT(*) AS n FROM opens WHERE email_id = ? AND likely_prefetch = 1"
   );
+  const selfStmt = db.prepare(
+    "SELECT COUNT(*) AS n FROM opens WHERE email_id = ? AND likely_prefetch = 3"
+  );
   const out = rows.map((r) => {
     const o = openStmt.get(r.id);
     const p = prefetchStmt.get(r.id);
+    const sv = selfStmt.get(r.id);
     // Mail that bounced or failed was never delivered, so it cannot have been read.
     if (r.status === "bounced" || r.status === "failed") {
       o.n = 0;
@@ -175,6 +180,7 @@ app.get("/api/emails", requireKey, (req, res) => {
       firstOpenedAt: o.first,
       lastOpenedAt: o.last,
       prefetchHits: p.n,
+      selfHits: sv.n,
     };
   });
   res.json({ emails: out });
@@ -182,13 +188,20 @@ app.get("/api/emails", requireKey, (req, res) => {
 
 // Extension: the sender is viewing their own email. Ignore the pixel loads this causes.
 app.post("/api/emails/:id/self-view", requireKey, (req, res) => {
+  const email = db.prepare("SELECT owner FROM emails WHERE id = ?").get(req.params.id);
+  const account = String((req.body && req.body.account) || "").trim().toLowerCase();
+  // Only the SENDER's own mailbox counts as a self-view. Another Google account open in the
+  // same browser (for example the recipient's) must never suppress a real read.
+  if (!email || !account || account !== String(email.owner).trim().toLowerCase()) {
+    return res.json({ ok: false, ignored: true });
+  }
   const now = Date.now();
   const r = db
     .prepare("UPDATE emails SET self_until = ? WHERE id = ?")
     .run(now + SELF_VIEW_GRACE_SEC * 1000, req.params.id);
   // Gmail may already have loaded the image a moment before this report arrived.
   db.prepare(
-    "UPDATE opens SET likely_prefetch = 2 WHERE email_id = ? AND likely_prefetch = 0 AND opened_at > ?"
+    "UPDATE opens SET likely_prefetch = 3 WHERE email_id = ? AND likely_prefetch = 0 AND opened_at > ?"
   ).run(req.params.id, now - SELF_VIEW_LOOKBACK_SEC * 1000);
   res.json({ ok: r.changes > 0 });
 });

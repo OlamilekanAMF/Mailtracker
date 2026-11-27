@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Mailtrack (internal)",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "description": "Tracks sent, read and bounced status for Gmail, Outlook, Zoho Mail and Yahoo Mail, with open notifications and no-reply reminders.",
   "permissions": ["storage", "alarms", "notifications"],
   "host_permissions": ["<all_urls>"],

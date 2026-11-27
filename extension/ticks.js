@@ -76,7 +76,7 @@
   function match(info) {
     const subj = D.norm(info.subject);
     let best = null;
-    for (const e of D.emails) {
+    for (const e of D.mine()) {
       if (D.norm(e.subject) !== subj) continue;
       if (
         info.recipients.length &&

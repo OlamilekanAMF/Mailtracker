@@ -54,10 +54,31 @@
     return isNaN(t) || t < Date.UTC(2020, 0, 1) ? null : t;
   };
 
+  // The Google account this tab is signed in to, read from the page title
+  // ("Inbox (2) - you@gmail.com - Gmail") or the account button. "" if unknown.
+  const EMAIL = "[A-Z0-9._%+-]+@[A-Z0-9.-]+\\.[A-Z]{2,}";
+  function account() {
+    const t = document.title.match(new RegExp("-\\s*(" + EMAIL + ")\\s*-\\s*[^-]+$", "i"));
+    if (t) return t[1].toLowerCase();
+    const el = document.querySelector('a[aria-label*="Google Account"], button[aria-label*="Google Account"]');
+    const m = el && (el.getAttribute("aria-label") || "").match(new RegExp(EMAIL, "i"));
+    return m ? m[0].toLowerCase() : "";
+  }
+
+  // Tracked emails that belong to the account open in THIS tab. With several Google accounts
+  // in one browser, another account's tab (for example the recipient's) is not the sender's
+  // mailbox and must not be treated as such.
+  const mine = () => {
+    const a = account();
+    return a ? emails.filter((e) => String(e.owner || "").trim().toLowerCase() === a) : emails;
+  };
+
   window.__mtData = {
     get emails() {
       return emails;
     },
+    account,
+    mine,
     onChange: (f) => listeners.add(f),
     refresh: load,
     send,

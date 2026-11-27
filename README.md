@@ -43,7 +43,12 @@ or Brave; it is not a published browser-store extension.
    up while Gmail is open.
 9. **Your own views don't count**: opening your own sent email in Gmail makes
    Gmail load the tracking image. The extension reports this to the backend
-   (`/api/emails/:id/self-view`), which ignores those loads.
+   (`/api/emails/:id/self-view`), which ignores those loads. This only applies
+   when the Gmail tab is signed in as the sender: the extension sends the
+   account it sees, and the backend rejects the report unless it equals the
+   email's owner. Another Google account open in the same browser (for example
+   the recipient) is never treated as a self-view. The popup shows "Your own
+   view ignored" when opens were skipped this way.
 
 ## Requirements
 

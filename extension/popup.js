@@ -115,6 +115,9 @@ function render(emails) {
       badges.append(badge(email.prefetchHits ? "Unread (only auto-loads)" : "Unread", "unread"));
     }
 
+    // Visible hint when opens were ignored because they looked like your own view.
+    if (email.selfHits > 0) badges.append(badge(`Your own view ignored · ${email.selfHits}`, "unread"));
+
     const rem = reminders[email.id];
     if (rem && rem.status === "active") badges.append(badge(`Reminder · ${fmtOpenTime(rem.at)}`, "pending"));
     else if (rem && rem.status === "replied") badges.append(badge("Replied", "sent"));

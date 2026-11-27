@@ -238,7 +238,10 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
       } else if (msg.type === "self-view") {
         // The owner is looking at their own sent email: its pixel loads are not reads.
         if (!ID_RE.test(String(msg.id || ""))) throw new Error("bad id");
-        await api(`/api/emails/${msg.id}/self-view`, { method: "POST", body: "{}" });
+        await api(`/api/emails/${msg.id}/self-view`, {
+          method: "POST",
+          body: JSON.stringify({ account: msg.account || "" }),
+        });
         sendResponse({ ok: true });
       }
     } catch (e) {

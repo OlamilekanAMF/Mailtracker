@@ -137,10 +137,14 @@
 
   function sendSelfView(emails) {
     lastSelfAt = Date.now();
+    // Only report when we positively know this tab is signed in as the sender. Otherwise a
+    // recipient opening the email in another account would be mistaken for the sender.
+    const account = D.account();
+    if (!account) return;
     emails
       .filter((e) => e.status === "sent" || e.status === "unconfirmed")
       .slice(0, 5)
-      .forEach((e) => D.send({ type: "self-view", id: e.id }));
+      .forEach((e) => D.send({ type: "self-view", id: e.id, account }));
   }
 
   async function render() {
@@ -154,7 +158,7 @@
       const open = !!h && h.offsetParent !== null;
       const subject = open ? h.textContent : "";
       currentMatches = open
-        ? D.emails
+        ? D.mine()
             .filter((e) => D.norm(e.subject) === D.norm(subject) && e.status !== "bounced" && e.status !== "failed")
             .sort((a, b) => b.createdAt - a.createdAt)
         : [];
